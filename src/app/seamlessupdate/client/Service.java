@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.os.RecoverySystem;
+import android.os.ServiceSpecificException;
 import android.os.SystemProperties;
 import android.os.UpdateEngine;
 import android.os.UpdateEngine.ErrorCodeConstants;
@@ -78,6 +79,8 @@ public class Service extends IntentService {
                     notificationHandler.showValidateNotification(Math.round(percent * 100));
                 } else if (status == UpdateStatusConstants.FINALIZING) {
                     notificationHandler.showFinalizeNotification(Math.round(percent * 100));
+                } else if (status == UpdateStatusConstants.UPDATED_NEED_REBOOT) {
+                    notificationHandler.showRebootNotification();
                 }
             }
 
@@ -94,13 +97,23 @@ public class Service extends IntentService {
                 monitor.countDown();
             }
         });
-        if (streaming) {
-            final SharedPreferences preferences = Settings.getPreferences(this);
-            final String downloadFile = preferences.getString(PREFERENCE_DOWNLOAD_FILE.replace("-streaming", ""), null);
-            engine.applyPayload(getString(R.string.url) + downloadFile, payloadOffset, 0, headerKeyValuePairs);
-        } else {
-            UPDATE_PATH.setReadable(true, false);
-            engine.applyPayload("file://" + UPDATE_PATH, payloadOffset, 0, headerKeyValuePairs);
+
+
+        try {
+            if (streaming) {
+                final SharedPreferences preferences = Settings.getPreferences(this);
+                final String downloadFile = preferences.getString(PREFERENCE_DOWNLOAD_FILE.replace("-streaming", ""), null);
+                engine.applyPayload(getString(R.string.url) + downloadFile, payloadOffset, 0, headerKeyValuePairs);
+            } else {
+                UPDATE_PATH.setReadable(true, false);
+                engine.applyPayload("file://" + UPDATE_PATH, payloadOffset, 0, headerKeyValuePairs);
+            }
+        } catch (ServiceSpecificException e) {
+            if(e.errorCode == ErrorCodeConstants.ERROR) {
+                notificationHandler.showRebootNotification();
+                return;
+            }
+            throw e;
         }
         try {
             monitor.await();
